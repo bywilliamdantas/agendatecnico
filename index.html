@@ -2,9 +2,19 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Painel Semanal da Equipe</title>
 <meta name="description" content="Painel semanal para lançar manutenções, consultas, faltas e folgas da equipe técnica.">
+
+<!-- PWA -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1B2A32">
+<link rel="icon" href="icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Painel Equipe">
+
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
@@ -15,5 +25,17 @@
 <div id="toast" class="toast"></div>
 <input type="file" id="importarInput" accept="application/json" style="display:none">
 <script src="script.js"></script>
+<script>
+  // Registro do service worker (só funciona em https ou localhost;
+  // no GitHub Pages funciona normalmente). Abrindo o arquivo direto
+  // pelo disco (file://) o app continua funcionando, apenas sem offline.
+  if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+    window.addEventListener('load', function () {
+      navigator.serviceWorker.register('sw.js').catch(function () {
+        /* sem offline: o painel continua funcionando normalmente */
+      });
+    });
+  }
+</script>
 </body>
 </html>

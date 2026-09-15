@@ -18,8 +18,32 @@ imagem pronta para enviar no WhatsApp.
 - **Geração de imagem**: botão "Gerar imagem para WhatsApp" tira um
   print da agenda da semana (respeitando os filtros aplicados) e baixa como
   PNG.
+- **Dia de hoje destacado**: a coluna do dia atual aparece realçada na grade,
+  com uma etiqueta "HOJE" no cabeçalho.
+- **Filtros lembrados**: os filtros escolhidos ficam salvos e voltam do jeito
+  que estavam ao reabrir o painel. Um botão "Limpar filtros" aparece sempre
+  que algum filtro estiver ativo.
+- **Aviso de lançamento duplicado**: ao salvar um evento para alguém que já
+  tem outro lançamento no mesmo dia e período conflitante, o painel avisa e
+  pede confirmação (dia todo conflita com qualquer período; manhã só com
+  manhã; tarde só com tarde).
+- **Confirmações informativas**: ao remover uma pessoa ou um motivo, o aviso
+  informa quantos eventos serão afetados.
 - **Cadastro de equipe e motivos**: abas para gerenciar técnicos, auxiliares
   e os motivos (com cor) usados nos lançamentos.
+- **Lançar em vários dias de uma vez**: no modal de novo evento há uma
+  seleção dos dias da semana — marque quantos quiser para repetir o mesmo
+  motivo e período (útil para folga ou afastamento de vários dias).
+- **Relatório mensal**: aba "Relatório" com a contagem de lançamentos por
+  pessoa e por motivo no mês escolhido, incluindo totais e exportação em CSV
+  (abre no Excel).
+- **Modo cartão no celular**: em telas estreitas a agenda vira uma lista de
+  cartões, um por pessoa, em vez da tabela com rolagem lateral.
+- **Desfazer**: ao excluir um evento, uma pessoa ou um motivo — e também ao
+  lançar vários dias de uma vez — aparece um botão "Desfazer" por alguns
+  segundos.
+- **Instalável (PWA)**: pode ser instalado como aplicativo no celular ou no
+  computador e abre offline.
 - **Backup manual**: botões "Exportar backup" e "Importar backup" no topo
   salvam/restauram todos os dados em um arquivo `.json`.
 
@@ -59,12 +83,37 @@ Não é necessário nenhum processo de build — são arquivos estáticos comuns
 funcionam também abrindo o `index.html` direto no navegador ou hospedados em
 qualquer outro serviço (Netlify, Vercel, servidor próprio, etc.).
 
+## Instalar como aplicativo (PWA)
+
+Depois de publicar no GitHub Pages (ou em qualquer endereço `https`), o
+painel pode ser instalado como app:
+
+- **Android (Chrome)**: abra o link, toque no menu (⋮) e escolha
+  "Instalar aplicativo" / "Adicionar à tela inicial".
+- **iPhone (Safari)**: abra o link, toque em Compartilhar e escolha
+  "Adicionar à Tela de Início".
+- **Computador (Chrome/Edge)**: aparece um ícone de instalar na barra de
+  endereço.
+
+Instalado, ele abre em tela cheia, sem a barra do navegador, e funciona sem
+internet (os dados já ficam no próprio aparelho).
+
+> **Ao publicar uma atualização**: abra o `sw.js` e mude o número da versão
+> em `CACHE_NAME` (de `painel-equipe-v1` para `v2`, por exemplo). Sem isso,
+> quem já tem o app instalado pode continuar vendo a versão antiga guardada
+> em cache.
+
 ## Estrutura dos arquivos
 
 ```
 .
-├── index.html   # estrutura da página
-├── style.css    # todo o visual do painel
-├── script.js    # toda a lógica (dados, filtros, agenda, backup)
+├── index.html      # estrutura da página
+├── style.css       # todo o visual do painel
+├── script.js       # toda a lógica (dados, filtros, agenda, relatório, backup)
+├── manifest.json   # configuração do app instalável (PWA)
+├── sw.js           # service worker: cache para funcionar offline
+├── icons/
+│   ├── icon-192.png
+│   └── icon-512.png
 └── README.md
 ```

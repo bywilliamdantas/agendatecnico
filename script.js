@@ -2,6 +2,7 @@
   const WEEKDAYS = ["Seg","Ter","Qua","Qui","Sex","Sáb"];
   const MOTIVO_PALETTE = ["#2C5F8A","#C98A2E","#6B5CA5","#C1443D","#2F7A62","#8A5A44","#4A6FA5","#A5477A"];
   const STORAGE_KEY = "painelEquipeDados";
+  const FILTROS_KEY = "painelEquipeFiltros";
 
   let state = {
     activeTab: 'agenda',
@@ -13,6 +14,25 @@
   };
 
   function uid(prefix){ return prefix + Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+
+  const MOBILE_BP = 640;
+  function isMobile(){ return window.innerWidth <= MOBILE_BP; }
+
+  // re-renderiza só quando o layout realmente muda de modo (tabela <-> cartões)
+  let ultimoModoMobile = null;
+  let resizeTimer = null;
+  window.addEventListener('resize', ()=>{
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(()=>{
+      const agora = isMobile();
+      if(ultimoModoMobile !== null && agora !== ultimoModoMobile && !state.loading){
+        ultimoModoMobile = agora;
+        render();
+      } else {
+        ultimoModoMobile = agora;
+      }
+    }, 200);
+  });
 
   function defaultData(){
     return {
@@ -47,14 +67,45 @@
       }catch(e){ /* nada salvo no armazenamento antigo */ }
     }
 
+    carregarFiltros();
+
     state.data = loaded || defaultData();
     if(!state.data.nomeEmpresa) state.data.nomeEmpresa = "Equipe de Campo";
     if(!Array.isArray(state.data.pessoas)) state.data.pessoas = [];
     if(!Array.isArray(state.data.motivos)) state.data.motivos = defaultData().motivos;
     if(!Array.isArray(state.data.eventos)) state.data.eventos = [];
+
+    // se o motivo salvo no filtro não existe mais, volta para "Todos"
+    if(state.filtros.motivo!=='todos' && !motivoById(state.filtros.motivo)){
+      state.filtros.motivo = 'todos';
+      salvarFiltros();
+    }
+
     state.loading = false;
     saveData(true);
     render();
+  }
+
+  function carregarFiltros(){
+    try{
+      const raw = localStorage.getItem(FILTROS_KEY);
+      if(!raw) return;
+      const f = JSON.parse(raw);
+      if(f && typeof f === 'object'){
+        if(typeof f.tipo === 'string') state.filtros.tipo = f.tipo;
+        if(typeof f.motivo === 'string') state.filtros.motivo = f.motivo;
+        if(typeof f.busca === 'string') state.filtros.busca = f.busca;
+        if(typeof f.somenteSemana === 'boolean') state.filtros.somenteSemana = f.somenteSemana;
+      }
+    }catch(e){ /* filtros corrompidos: segue com os padrões */ }
+  }
+
+  let filtrosTimer=null;
+  function salvarFiltros(){
+    clearTimeout(filtrosTimer);
+    filtrosTimer = setTimeout(()=>{
+      try{ localStorage.setItem(FILTROS_KEY, JSON.stringify(state.filtros)); }catch(e){}
+    }, 200);
   }
 
   let saveTimer=null;
@@ -104,12 +155,35 @@
     reader.readAsText(file);
   }
 
-  function showToast(msg){
+  function atualizarTitulo(){
+    const nome = (state.data && state.data.nomeEmpresa) ? state.data.nomeEmpresa : 'Equipe de Campo';
+    document.title = nome + ' — Painel Semanal';
+  }
+
+  function showToast(msg, acaoFn, acaoLabel){
     const t = document.getElementById('toast');
-    t.textContent = msg;
+    t.innerHTML = '';
+    const span = document.createElement('span');
+    span.textContent = msg;
+    t.appendChild(span);
+
+    const duracao = acaoFn ? 7000 : 2200;
+
+    if(acaoFn){
+      const btn = document.createElement('button');
+      btn.className = 'toast-action';
+      btn.textContent = acaoLabel || 'Desfazer';
+      btn.addEventListener('click', ()=>{
+        clearTimeout(t._timer);
+        t.classList.remove('show');
+        acaoFn();
+      });
+      t.appendChild(btn);
+    }
+
     t.classList.add('show');
     clearTimeout(t._timer);
-    t._timer = setTimeout(()=>t.classList.remove('show'), 2200);
+    t._timer = setTimeout(()=>t.classList.remove('show'), duracao);
   }
 
   // ---------- datas ----------
@@ -132,7 +206,10 @@
     }
     return arr;
   }
-  function iso(d){ return d.toISOString().slice(0,10); }
+  // usa a data LOCAL (toISOString converteria para UTC e poderia trocar o dia)
+  function iso(d){
+    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  }
   function br(d){ return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0'); }
   function brLong(d){ return d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'}); }
 
@@ -144,6 +221,37 @@
 
   function motivoById(id){ return state.data.motivos.find(m=>m.id===id); }
   function pessoaById(id){ return state.data.pessoas.find(p=>p.id===id); }
+
+  // dois períodos conflitam quando ocupam o mesmo espaço do dia:
+  // "dia todo" conflita com tudo; manhã só com manhã; tarde só com tarde.
+  function periodosConflitam(a, b){
+    if(a==='dia' || b==='dia') return true;
+    return a===b;
+  }
+
+  function eventosConflitantes(pessoaId, data, periodo, ignorarEventoId){
+    return state.data.eventos.filter(e=>
+      e.pessoaId===pessoaId &&
+      e.data===data &&
+      e.id!==ignorarEventoId &&
+      periodosConflitam(e.periodo, periodo)
+    );
+  }
+
+  function contarEventosPorPessoa(pessoaId){
+    return state.data.eventos.filter(e=>e.pessoaId===pessoaId).length;
+  }
+  function contarEventosPorMotivo(motivoId){
+    return state.data.eventos.filter(e=>e.motivoId===motivoId).length;
+  }
+  function filtrosAtivos(){
+    const f = state.filtros;
+    return f.tipo!=='todos' || f.motivo!=='todos' || !!f.busca || f.somenteSemana;
+  }
+
+  function plural(n, singular, pluralForma){
+    return n + ' ' + (n===1 ? singular : pluralForma);
+  }
 
   function irParaData(dateStr){
     if(!dateStr) return;
@@ -165,6 +273,8 @@
     const selEnd = active && typeof active.selectionEnd === 'number' ? active.selectionEnd : null;
 
     if(state.loading){ app.innerHTML = '<div style="padding:60px;text-align:center;color:#5B6B72;">Carregando painel...</div>'; return; }
+    atualizarTitulo();
+    ultimoModoMobile = isMobile();
     const dates = weekDates(state.weekOffset);
     const rangeLabel = br(dates[0]) + ' – ' + br(dates[5]);
 
@@ -195,11 +305,13 @@
         <div class="tab ${state.activeTab==='agenda'?'active':''}" data-action="tab" data-tab="agenda">Agenda</div>
         <div class="tab ${state.activeTab==='equipe'?'active':''}" data-action="tab" data-tab="equipe">Técnicos &amp; auxiliares</div>
         <div class="tab ${state.activeTab==='motivos'?'active':''}" data-action="tab" data-tab="motivos">Motivos</div>
+        <div class="tab ${state.activeTab==='relatorio'?'active':''}" data-action="tab" data-tab="relatorio">Relatório</div>
       </div>
 
       ${state.activeTab==='agenda' ? renderAgenda(dates) : ''}
       ${state.activeTab==='equipe' ? renderEquipe() : ''}
       ${state.activeTab==='motivos' ? renderMotivos() : ''}
+      ${state.activeTab==='relatorio' ? renderRelatorio() : ''}
 
       ${state.activeTab==='agenda' ? '<button class="fab" data-action="novo-evento">+ Novo evento</button>' : ''}
       ${state.modal ? renderModal() : ''}
@@ -225,6 +337,7 @@
 
     const f = state.filtros;
     const diso0 = iso(dates[0]), disoN = iso(dates[5]);
+    const hojeIso = iso(new Date());
 
     function eventosDaPessoaNaSemana(p){
       return state.data.eventos.filter(e=>{
@@ -263,13 +376,58 @@
               <span>${escapeHtml(nome)} · ${periodoLabel(e.periodo)}</span>
             </div>`;
           }).join('');
-          return `<div class="cell day-cell" data-action="add-evento-cell" data-pessoa="${p.id}" data-data="${diso}">${chips}</div>`;
+          const hojeCls = (diso===hojeIso) ? ' is-today' : '';
+          return `<div class="cell day-cell${hojeCls}" data-action="add-evento-cell" data-pessoa="${p.id}" data-data="${diso}">${chips}</div>`;
         }).join('');
         return `<div class="cell person-cell"><span class="person-name">${escapeHtml(p.nome)}</span><span class="person-tag">${p.tipo==='tecnico'?'Técnico':'Auxiliar'}</span></div>${cells}`;
       }).join('');
     }
 
-    const headCells = dates.map(d=>`<div class="cell head-cell"><b>${WEEKDAYS[dates.indexOf(d)]}</b>${br(d)}</div>`).join('');
+    // versão em cartões usada em telas estreitas
+    function cardsFor(tecs, auxs, datas, hoje){
+      function cardPessoa(p){
+        const dias = datas.map((d,i)=>{
+          const diso = iso(d);
+          let evs = state.data.eventos.filter(e=>e.pessoaId===p.id && e.data===diso);
+          if(f.motivo!=='todos') evs = evs.filter(e=>e.motivoId===f.motivo);
+          if(evs.length===0) return '';
+          const chips = evs.map(e=>{
+            const mo = motivoById(e.motivoId);
+            const cor = mo ? mo.cor : '#888';
+            const nome = mo ? mo.nome : '(motivo removido)';
+            return `<div class="chip" style="background:${hexSoft(cor)};color:${cor};" data-action="editar-evento" data-evento="${e.id}">
+              <span class="dot" style="background:${cor};"></span>
+              <span>${escapeHtml(nome)} · ${periodoLabel(e.periodo)}</span>
+            </div>`;
+          }).join('');
+          return `<div class="mc-dia${diso===hoje?' is-today':''}">
+            <div class="mc-dia-label">${WEEKDAYS[i]} ${br(d)}${diso===hoje?'<span class="today-badge">HOJE</span>':''}</div>
+            <div class="mc-dia-chips">${chips}</div>
+          </div>`;
+        }).join('');
+
+        const vazio = dias==='';
+        return `<div class="mobile-card">
+          <div class="mc-head">
+            <div>
+              <div class="mc-nome">${escapeHtml(p.nome)}</div>
+              <div class="mc-tag">${p.tipo==='tecnico'?'Técnico':'Auxiliar'}</div>
+            </div>
+            <button class="btn btn-ghost btn-small" data-action="add-evento-cell" data-pessoa="${p.id}" data-data="${iso(datas[0])}">+ Lançar</button>
+          </div>
+          ${vazio ? '<div class="mc-vazio">Sem lançamentos nesta semana.</div>' : `<div class="mc-dias">${dias}</div>`}
+        </div>`;
+      }
+      let out = '';
+      if(tecs.length) out += `<div class="mc-grupo">Técnicos</div>` + tecs.map(cardPessoa).join('');
+      if(auxs.length) out += `<div class="mc-grupo">Auxiliares</div>` + auxs.map(cardPessoa).join('');
+      return `<div class="mobile-cards">${out}</div>`;
+    }
+
+    const headCells = dates.map((d,i)=>{
+      const ehHoje = iso(d)===hojeIso;
+      return `<div class="cell head-cell${ehHoje?' is-today':''}"><b>${WEEKDAYS[i]}${ehHoje?'<span class="today-badge">HOJE</span>':''}</b>${br(d)}</div>`;
+    }).join('');
 
     const motivosOptsFiltro = state.data.motivos.map(m=>`<option value="${m.id}" ${f.motivo===m.id?'selected':''}>${escapeHtml(m.nome)}</option>`).join('');
 
@@ -298,6 +456,7 @@
           <input type="checkbox" id="filtroSomenteSemana" ${f.somenteSemana?'checked':''}>
           <label for="filtroSomenteSemana">Mostrar só quem tem lançamento nesta semana</label>
         </div>
+        ${filtrosAtivos() ? '<div class="filter-field"><button class="btn btn-ghost btn-small" data-action="limpar-filtros">Limpar filtros</button></div>' : ''}
       </div>
     `;
 
@@ -306,7 +465,7 @@
     return `
       <div class="panel">
         <div class="agenda-toolbar">
-          <div style="font-size:13px;color:var(--ink-soft);">Clique em uma célula do dia para lançar um evento.</div>
+          <div style="font-size:13px;color:var(--ink-soft);">${isMobile() ? 'Toque em "+ Lançar" no cartão da pessoa, ou em um lançamento para editá-lo.' : 'Clique em uma célula do dia para lançar um evento.'}</div>
           <button class="btn btn-accent" data-action="gerar-imagem">Gerar imagem para WhatsApp</button>
         </div>
         ${filtersHtml}
@@ -315,7 +474,8 @@
             <h2>${escapeHtml(state.data.nomeEmpresa)}</h2>
             <span>Semana de ${brLong(dates[0])} a ${brLong(dates[5])}</span>
           </div>
-          ${semResultado ? '<div class="empty-list">Nenhum resultado para os filtros aplicados nesta semana.</div>' : `
+          ${semResultado ? '<div class="empty-list">Nenhum resultado para os filtros aplicados nesta semana.</div>' : (
+            isMobile() ? cardsFor(tecnicos, auxiliares, dates, hojeIso) : `
           <div class="grid-wrap">
             <div class="agrid">
               <div class="cell head-cell"></div>
@@ -323,7 +483,7 @@
               ${tecnicos.length ? `<div class="group-row">Técnicos</div>` + rowsFor(tecnicos) : ''}
               ${auxiliares.length ? `<div class="group-row">Auxiliares</div>` + rowsFor(auxiliares) : ''}
             </div>
-          </div>`}
+          </div>`)}
         </div>
       </div>
     `;
@@ -388,6 +548,96 @@
     `;
   }
 
+  function renderRelatorio(){
+    const mesRef = state.relatorioMes || iso(new Date()).slice(0,7); // AAAA-MM
+    const eventosMes = state.data.eventos.filter(e=>e.data.slice(0,7)===mesRef);
+
+    const [ano, mes] = mesRef.split('-');
+    const nomeMes = new Date(Number(ano), Number(mes)-1, 1)
+      .toLocaleDateString('pt-BR',{month:'long', year:'numeric'});
+
+    const motivos = state.data.motivos;
+    const pessoas = state.data.pessoas;
+
+    const seletor = `
+      <div class="rel-toolbar">
+        <div class="filter-field">
+          <label>Mês de referência</label>
+          <input type="month" id="relatorioMes" value="${mesRef}">
+        </div>
+        <button class="btn btn-ghost btn-small" data-action="exportar-relatorio-csv">Baixar em CSV</button>
+      </div>`;
+
+    if(pessoas.length===0){
+      return `<div class="panel">${seletor}<div class="empty-list">Nenhum técnico ou auxiliar cadastrado ainda.</div></div>`;
+    }
+    if(eventosMes.length===0){
+      return `<div class="panel">${seletor}<div class="empty-list">Nenhum evento lançado em ${nomeMes}.</div></div>`;
+    }
+
+    // só mostra colunas de motivos que aparecem no mês, para a tabela não ficar enorme
+    const motivosUsados = motivos.filter(mo=> eventosMes.some(e=>e.motivoId===mo.id));
+    const temOrfaos = eventosMes.some(e=> !motivoById(e.motivoId));
+
+    function contar(pessoaId, motivoId){
+      return eventosMes.filter(e=>e.pessoaId===pessoaId && e.motivoId===motivoId).length;
+    }
+    function contarOrfaos(pessoaId){
+      return eventosMes.filter(e=>e.pessoaId===pessoaId && !motivoById(e.motivoId)).length;
+    }
+
+    // só lista quem teve algum evento no mês
+    const pessoasComEventos = pessoas.filter(p=> eventosMes.some(e=>e.pessoaId===p.id));
+
+    const head = `
+      <tr>
+        <th class="rel-nome">Pessoa</th>
+        ${motivosUsados.map(mo=>`<th><span class="rel-dot" style="background:${mo.cor};"></span>${escapeHtml(mo.nome)}</th>`).join('')}
+        ${temOrfaos ? '<th>(motivo removido)</th>' : ''}
+        <th class="rel-total">Total</th>
+      </tr>`;
+
+    const linhas = pessoasComEventos.map(p=>{
+      const cels = motivosUsados.map(mo=>{
+        const n = contar(p.id, mo.id);
+        return `<td class="${n===0?'zero':''}">${n}</td>`;
+      }).join('');
+      const orf = temOrfaos ? `<td class="${contarOrfaos(p.id)===0?'zero':''}">${contarOrfaos(p.id)}</td>` : '';
+      const total = eventosMes.filter(e=>e.pessoaId===p.id).length;
+      return `<tr>
+        <td class="rel-nome">${escapeHtml(p.nome)}<span class="rel-tag">${p.tipo==='tecnico'?'Técnico':'Auxiliar'}</span></td>
+        ${cels}${orf}
+        <td class="rel-total">${total}</td>
+      </tr>`;
+    }).join('');
+
+    const totaisCols = motivosUsados.map(mo=>{
+      const n = eventosMes.filter(e=>e.motivoId===mo.id).length;
+      return `<td>${n}</td>`;
+    }).join('');
+    const totalOrf = temOrfaos ? `<td>${eventosMes.filter(e=>!motivoById(e.motivoId)).length}</td>` : '';
+
+    const rodape = `
+      <tr class="rel-rodape">
+        <td class="rel-nome">Total geral</td>
+        ${totaisCols}${totalOrf}
+        <td class="rel-total">${eventosMes.length}</td>
+      </tr>`;
+
+    return `
+      <div class="panel">
+        ${seletor}
+        <h3 style="margin:4px 0 2px;font-size:15px;text-transform:capitalize;">${nomeMes}</h3>
+        <p class="hint" style="margin:0 0 14px;">Quantidade de lançamentos por pessoa e motivo no mês.</p>
+        <div class="rel-wrap">
+          <table class="rel-table">
+            <thead>${head}</thead>
+            <tbody>${linhas}${rodape}</tbody>
+          </table>
+        </div>
+      </div>`;
+  }
+
   function renderModal(){
     const m = state.modal;
     const pessoasOpts = state.data.pessoas.map(p=>`<option value="${p.id}" ${p.id===m.pessoaId?'selected':''}>${escapeHtml(p.nome)} (${p.tipo==='tecnico'?'Técnico':'Auxiliar'})</option>`).join('');
@@ -426,6 +676,15 @@
             </div>
           </div>
 
+          ${!isEdit ? `
+          <div class="field">
+            <label>Repetir em outros dias da mesma semana <span style="font-weight:400;">(opcional)</span></label>
+            <div class="days-multi" id="diasMulti">
+              ${diasMultiHtml(m.data)}
+            </div>
+            <p class="days-hint">O dia escolhido acima já é lançado automaticamente. Marque aqui para repetir o mesmo motivo e período em outros dias.</p>
+          </div>` : ''}
+
           <div class="modal-actions">
             <div>${isEdit?'<button class="btn-danger-text" data-action="excluir-evento">Excluir evento</button>':''}</div>
             <div class="right">
@@ -436,6 +695,27 @@
         </div>
       </div>
     `;
+  }
+
+  // monta os checkboxes dos dias da semana a que pertence a data escolhida
+  function diasMultiHtml(dataBase){
+    if(!dataBase) return '';
+    const base = mondayOf(new Date(dataBase+'T00:00:00'));
+    const marcados = state.modal && state.modal.diasExtras ? state.modal.diasExtras : [];
+    let out = '';
+    for(let i=0;i<6;i++){
+      const d = new Date(base);
+      d.setDate(d.getDate()+i);
+      const diso = iso(d);
+      const ehBase = diso===dataBase;
+      const checked = ehBase || marcados.indexOf(diso)!==-1;
+      out += `<label class="day-pick${ehBase?' is-base':''}" title="${ehBase?'Dia principal do lançamento':br(d)}">
+        <input type="checkbox" class="dia-multi" value="${diso}" ${checked?'checked':''} ${ehBase?'disabled':''}>
+        <span class="dp-wd">${WEEKDAYS[i]}</span>
+        <span class="dp-dt">${br(d)}</span>
+      </label>`;
+    }
+    return out;
   }
 
   // ---------- helpers ----------
@@ -459,7 +739,9 @@
     const brandInput = document.getElementById('brandInput');
     if(brandInput){
       brandInput.addEventListener('change', e=>{
-        state.data.nomeEmpresa = e.target.value || 'Equipe de Campo';
+        state.data.nomeEmpresa = e.target.value.trim() || 'Equipe de Campo';
+        e.target.value = state.data.nomeEmpresa;
+        atualizarTitulo();
         saveData();
       });
     }
@@ -477,6 +759,7 @@
     }
     if(t.id==='filtroBusca'){
       state.filtros.busca = t.value;
+      salvarFiltros();
       render();
       return;
     }
@@ -495,6 +778,13 @@
     if(action==='today'){ state.weekOffset=0; render(); return; }
     if(action==='tab'){ state.activeTab = el.dataset.tab; render(); return; }
 
+    if(action==='limpar-filtros'){
+      state.filtros = { tipo:'todos', motivo:'todos', busca:'', somenteSemana:false };
+      salvarFiltros();
+      render();
+      return;
+    }
+
     if(action==='exportar-dados'){ exportarDados(); return; }
     if(action==='importar-dados-click'){ document.getElementById('importarInput').click(); return; }
 
@@ -511,9 +801,23 @@
     }
     if(action==='remover-pessoa'){
       const id = el.dataset.id;
-      if(!confirm('Remover esta pessoa? Os eventos associados a ela continuarão salvos, mas não aparecerão mais na agenda.')) return;
+      const pessoa = pessoaById(id);
+      const qtd = contarEventosPorPessoa(id);
+      const nomePessoa = pessoa ? pessoa.nome : 'esta pessoa';
+      const msg = qtd===0
+        ? `Remover ${nomePessoa}? Não há nenhum evento lançado para ela.`
+        : `Remover ${nomePessoa}? Ela tem ${plural(qtd,'evento lançado','eventos lançados')}, que deixarão de aparecer na agenda.`;
+      if(!confirm(msg)) return;
+      const idx = state.data.pessoas.findIndex(p=>p.id===id);
+      const removida = state.data.pessoas[idx];
       state.data.pessoas = state.data.pessoas.filter(p=>p.id!==id);
       saveData(); render();
+      showToast(`${nomePessoa} removido(a).`, ()=>{
+        if(removida){
+          state.data.pessoas.splice(Math.max(idx,0), 0, removida);
+          saveData(); render(); showToast('Remoção desfeita.');
+        }
+      });
       return;
     }
 
@@ -529,9 +833,24 @@
     }
     if(action==='remover-motivo'){
       const id = el.dataset.id;
-      if(!confirm('Remover este motivo?')) return;
+      const motivo = motivoById(id);
+      const qtd = contarEventosPorMotivo(id);
+      const nomeMotivo = motivo ? `"${motivo.nome}"` : 'este motivo';
+      const msg = qtd===0
+        ? `Remover o motivo ${nomeMotivo}? Ele não está sendo usado em nenhum evento.`
+        : `Remover o motivo ${nomeMotivo}? Ele é usado em ${plural(qtd,'evento','eventos')}, que passarão a aparecer como "(motivo removido)" na agenda.`;
+      if(!confirm(msg)) return;
+      const idxM = state.data.motivos.findIndex(m=>m.id===id);
+      const removidoM = state.data.motivos[idxM];
       state.data.motivos = state.data.motivos.filter(m=>m.id!==id);
+      if(state.filtros.motivo===id){ state.filtros.motivo='todos'; salvarFiltros(); }
       saveData(); render();
+      showToast('Motivo removido.', ()=>{
+        if(removidoM){
+          state.data.motivos.splice(Math.max(idxM,0), 0, removidoM);
+          saveData(); render(); showToast('Remoção desfeita.');
+        }
+      });
       return;
     }
 
@@ -580,13 +899,22 @@
     }
     if(action==='excluir-evento'){
       if(!confirm('Excluir este evento?')) return;
+      const removido = state.data.eventos.find(x=>x.id===state.modal.eventoId);
       state.data.eventos = state.data.eventos.filter(x=>x.id!==state.modal.eventoId);
       state.modal = null;
       saveData(); render();
+      showToast('Evento excluído.', ()=>{
+        if(removido){ state.data.eventos.push(removido); saveData(); render(); showToast('Exclusão desfeita.'); }
+      });
       return;
     }
     if(action==='salvar-evento'){
       salvarEvento();
+      return;
+    }
+
+    if(action==='exportar-relatorio-csv'){
+      exportarRelatorioCSV();
       return;
     }
 
@@ -599,6 +927,7 @@
   // eventos que não são 'click' nem 'input' direto em #app (selects, checkboxes, arquivo)
   document.addEventListener('change', function(e){
     if(e.target.id==='modalMotivo'){
+      syncModalFromDOM();
       if(e.target.value==='__novo__'){
         state.modal.showNewMotivo = true;
       } else {
@@ -608,9 +937,37 @@
       render();
       return;
     }
-    if(e.target.id==='filtroTipo'){ state.filtros.tipo = e.target.value; render(); return; }
-    if(e.target.id==='filtroMotivo'){ state.filtros.motivo = e.target.value; render(); return; }
-    if(e.target.id==='filtroSomenteSemana'){ state.filtros.somenteSemana = e.target.checked; render(); return; }
+    if(e.target.id==='modalData'){
+      if(state.modal){
+        syncModalFromDOM();
+        state.modal.data = e.target.value;
+        // dias extras que saíram da semana da nova data deixam de valer
+        if(state.modal.diasExtras && e.target.value){
+          const base = mondayOf(new Date(e.target.value+'T00:00:00'));
+          const fim = new Date(base); fim.setDate(fim.getDate()+5);
+          const ini = iso(base), f2 = iso(fim);
+          state.modal.diasExtras = state.modal.diasExtras.filter(d=> d>=ini && d<=f2 && d!==e.target.value);
+        }
+        render();
+      }
+      return;
+    }
+    if(e.target.classList && e.target.classList.contains('dia-multi')){
+      if(state.modal){
+        const v = e.target.value;
+        if(!state.modal.diasExtras) state.modal.diasExtras = [];
+        if(e.target.checked){
+          if(state.modal.diasExtras.indexOf(v)===-1) state.modal.diasExtras.push(v);
+        } else {
+          state.modal.diasExtras = state.modal.diasExtras.filter(d=>d!==v);
+        }
+      }
+      return;
+    }
+    if(e.target.id==='filtroTipo'){ state.filtros.tipo = e.target.value; salvarFiltros(); render(); return; }
+    if(e.target.id==='filtroMotivo'){ state.filtros.motivo = e.target.value; salvarFiltros(); render(); return; }
+    if(e.target.id==='filtroSomenteSemana'){ state.filtros.somenteSemana = e.target.checked; salvarFiltros(); render(); return; }
+    if(e.target.id==='relatorioMes'){ state.relatorioMes = e.target.value; render(); return; }
     if(e.target.id==='irParaData'){ irParaData(e.target.value); return; }
     if(e.target.id==='importarInput'){
       if(e.target.files && e.target.files[0]){ importarDados(e.target.files[0]); }
@@ -618,6 +975,22 @@
       return;
     }
   });
+
+  // guarda no estado o que já está preenchido na tela, para não perder
+  // as escolhas quando o modal é re-renderizado
+  function syncModalFromDOM(){
+    if(!state.modal) return;
+    const p = document.getElementById('modalPessoa');
+    const d = document.getElementById('modalData');
+    const mo = document.getElementById('modalMotivo');
+    const per = document.querySelector('input[name="periodo"]:checked');
+    if(p) state.modal.pessoaId = p.value;
+    if(d && d.value) state.modal.data = d.value;
+    if(mo && mo.value !== '__novo__') state.modal.motivoId = mo.value;
+    if(per) state.modal.periodo = per.value;
+    const nomeNovo = document.getElementById('modalNovoMotivoNome');
+    if(nomeNovo) state.modal.novoMotivoNome = nomeNovo.value;
+  }
 
   function salvarEvento(){
     const m = state.modal;
@@ -639,16 +1012,89 @@
       motivoId = novo.id;
     }
 
+    // monta a lista de datas: a principal + as marcadas para repetir
+    let datas = [data];
+    if(m.mode!=='edit'){
+      const marcados = Array.from(document.querySelectorAll('.dia-multi:checked:not(:disabled)')).map(c=>c.value);
+      marcados.forEach(d=>{ if(datas.indexOf(d)===-1) datas.push(d); });
+    }
+    datas.sort();
+
+    const pessoa = pessoaById(pessoaId);
+    const nomePessoa = pessoa ? pessoa.nome : 'Esta pessoa';
+
+    // checa conflitos em todas as datas de uma vez
+    const datasComConflito = datas.filter(d=>
+      eventosConflitantes(pessoaId, d, periodo, m.mode==='edit' ? m.eventoId : null).length > 0
+    );
+    if(datasComConflito.length > 0){
+      const lista = datasComConflito.map(d=>{
+        const [a,mes,dia] = d.split('-');
+        const detalhes = eventosConflitantes(pessoaId, d, periodo, m.mode==='edit' ? m.eventoId : null)
+          .map(c=>{ const mo = motivoById(c.motivoId); return (mo?mo.nome:'(motivo removido)')+' — '+periodoLabel(c.periodo); })
+          .join('; ');
+        return `• ${dia}/${mes}: ${detalhes}`;
+      }).join('\n');
+      const msg = `${nomePessoa} já tem lançamento no mesmo período (${periodoLabel(periodo)}) em:\n\n${lista}\n\nDeseja lançar mesmo assim?`;
+      if(!confirm(msg)) return;
+    }
+
     if(m.mode==='edit'){
       const ev = state.data.eventos.find(x=>x.id===m.eventoId);
       if(ev){ ev.pessoaId=pessoaId; ev.data=data; ev.motivoId=motivoId; ev.periodo=periodo; }
-    } else {
-      state.data.eventos.push({id:uid('e'), pessoaId, data, motivoId, periodo});
+      state.modal = null;
+      saveData();
+      render();
+      showToast('Evento atualizado.');
+      return;
     }
+
+    const novos = datas.map(d=>({id:uid('e'), pessoaId, data:d, motivoId, periodo}));
+    novos.forEach(ev=>state.data.eventos.push(ev));
+    const idsNovos = novos.map(ev=>ev.id);
+
     state.modal = null;
     saveData();
     render();
-    showToast('Evento salvo.');
+    showToast(
+      novos.length===1 ? 'Evento salvo.' : `${novos.length} eventos salvos.`,
+      ()=>{
+        state.data.eventos = state.data.eventos.filter(ev=>idsNovos.indexOf(ev.id)===-1);
+        saveData(); render();
+        showToast('Lançamento desfeito.');
+      },
+      'Desfazer'
+    );
+  }
+
+  function exportarRelatorioCSV(){
+    const mesRef = state.relatorioMes || iso(new Date()).slice(0,7);
+    const eventosMes = state.data.eventos.filter(e=>e.data.slice(0,7)===mesRef);
+    if(eventosMes.length===0){ showToast('Não há lançamentos neste mês para exportar.'); return; }
+
+    const motivosUsados = state.data.motivos.filter(mo=> eventosMes.some(e=>e.motivoId===mo.id));
+    const pessoasComEventos = state.data.pessoas.filter(p=> eventosMes.some(e=>e.pessoaId===p.id));
+
+    const esc = v => '"' + String(v).replace(/"/g,'""') + '"';
+    const linhas = [];
+    linhas.push(['Pessoa','Tipo', ...motivosUsados.map(m=>m.nome), 'Total'].map(esc).join(';'));
+    pessoasComEventos.forEach(p=>{
+      const cols = motivosUsados.map(mo=> eventosMes.filter(e=>e.pessoaId===p.id && e.motivoId===mo.id).length);
+      const total = eventosMes.filter(e=>e.pessoaId===p.id).length;
+      linhas.push([p.nome, p.tipo==='tecnico'?'Técnico':'Auxiliar', ...cols, total].map(esc).join(';'));
+    });
+    const totais = motivosUsados.map(mo=> eventosMes.filter(e=>e.motivoId===mo.id).length);
+    linhas.push(['Total geral','', ...totais, eventosMes.length].map(esc).join(';'));
+
+    // BOM para o Excel abrir os acentos corretamente
+    const blob = new Blob(["\uFEFF" + linhas.join('\r\n')], {type:'text/csv;charset=utf-8;'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `relatorio-${mesRef}.csv`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(()=>URL.revokeObjectURL(url), 4000);
+    showToast('Relatório exportado em CSV.');
   }
 
   function gerarImagem(){
