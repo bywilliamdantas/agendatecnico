@@ -4,7 +4,7 @@
 // IMPORTANTE: ao publicar uma nova versão dos arquivos, mude o CACHE_NAME
 // abaixo (ex.: v2, v3...) para que os navegadores baixem a versão nova.
 
-const CACHE_NAME = 'painel-equipe-v4';
+const CACHE_NAME = 'painel-equipe-v5';
 
 const ARQUIVOS = [
   './',

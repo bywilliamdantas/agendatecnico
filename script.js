@@ -10,7 +10,7 @@
     data: null,
     modal: null, // {mode:'new'|'edit', pessoaId, data, eventoId, showNewMotivo}
     loading: true,
-    filtros: { tipo:'todos', motivo:'todos', supervisor:'todos', busca:'', somenteSemana:false, dias:[0,1,2,3,4,5,6] }
+    filtros: { tipo:'todos', motivo:'todos', supervisor:'todos', busca:'', somenteSemana:false, dias:[0,1,2,3,4,5,6], ordenarPorMotivo:false, diaRefMotivo:'' }
   };
 
   function uid(prefix){ return prefix + Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
@@ -107,6 +107,8 @@
           const dias = f.dias.filter(n=>Number.isInteger(n) && n>=0 && n<=6);
           if(dias.length>0) state.filtros.dias = dias.sort((a,b)=>a-b);
         }
+        if(typeof f.ordenarPorMotivo === 'boolean') state.filtros.ordenarPorMotivo = f.ordenarPorMotivo;
+        if(typeof f.diaRefMotivo === 'string') state.filtros.diaRefMotivo = f.diaRefMotivo;
       }
     }catch(e){ /* filtros corrompidos: segue com os padrões */ }
   }
@@ -292,6 +294,54 @@
     });
   }
 
+  // nome(s) do(s) motivo(s) da pessoa num dia específico, usado como
+  // terceiro critério de ordenação (Supervisor > Nome > Motivo da ausência).
+  // quem não tem lançamento naquele dia entra por último.
+  function motivoRefDaPessoa(pessoaId, refIso){
+    if(!refIso) return '';
+    const evs = state.data.eventos.filter(e=>e.pessoaId===pessoaId && e.data===refIso);
+    if(evs.length===0) return '';
+    const nomes = [];
+    evs.forEach(e=>{
+      const mo = motivoById(e.motivoId);
+      const nome = mo ? mo.nome : '(motivo removido)';
+      if(nomes.indexOf(nome)===-1) nomes.push(nome);
+    });
+    nomes.sort((a,b)=>a.localeCompare(b,'pt-BR'));
+    return nomes.join(' + ');
+  }
+
+  // mesma ordenação de supervisor+nome, com o motivo do dia de referência
+  // como critério de desempate final (Supervisor > Nome > Motivo)
+  function ordenarPorSupervisorNomeMotivo(lista, refIso){
+    return lista.slice().sort((a,b)=>{
+      const sa = (a.supervisor||'').trim();
+      const sb = (b.supervisor||'').trim();
+      if(sa==='' && sb!=='') return 1;
+      if(sb==='' && sa!=='') return -1;
+      if(sa!==sb) return sa.localeCompare(sb,'pt-BR');
+      const cmpNome = a.nome.localeCompare(b.nome,'pt-BR');
+      if(cmpNome!==0) return cmpNome;
+      const ma = motivoRefDaPessoa(a.id, refIso);
+      const mb = motivoRefDaPessoa(b.id, refIso);
+      if(ma==='' && mb!=='') return 1;
+      if(mb==='' && ma!=='') return -1;
+      return ma.localeCompare(mb,'pt-BR');
+    });
+  }
+
+  // decide qual dia usar como referência do motivo: o escolhido pelo
+  // usuário (se ainda estiver na semana em exibição), senão hoje (se
+  // estiver na semana), senão a segunda-feira da semana
+  function diaRefMotivoEfetivo(datasSemana){
+    const isosSemana = datasSemana.map(iso);
+    const escolhido = state.filtros.diaRefMotivo;
+    if(escolhido && isosSemana.indexOf(escolhido)!==-1) return escolhido;
+    const hojeIso = iso(new Date());
+    if(isosSemana.indexOf(hojeIso)!==-1) return hojeIso;
+    return isosSemana[0];
+  }
+
   // abaixo do nome mostramos o supervisor; sem supervisor, mostra o cargo
   function subtituloPessoa(p){
     if(p.supervisor && p.supervisor.trim()) return 'Sup.: ' + p.supervisor.trim();
@@ -300,7 +350,7 @@
 
   function filtrosAtivos(){
     const f = state.filtros;
-    return f.tipo!=='todos' || f.motivo!=='todos' || f.supervisor!=='todos' || !!f.busca || f.somenteSemana || (f.dias && f.dias.length!==7);
+    return f.tipo!=='todos' || f.motivo!=='todos' || f.supervisor!=='todos' || !!f.busca || f.somenteSemana || (f.dias && f.dias.length!==7) || f.ordenarPorMotivo;
   }
 
   function plural(n, singular, pluralForma){
@@ -421,8 +471,13 @@
       pessoasFiltradas = pessoasFiltradas.filter(p=> eventosDaPessoaNaSemana(p).length>0);
     }
 
-    const tecnicos = ordenarPorSupervisorENome(pessoasFiltradas.filter(p=>p.tipo==='tecnico'));
-    const auxiliares = ordenarPorSupervisorENome(pessoasFiltradas.filter(p=>p.tipo==='auxiliar'));
+    const refIso = f.ordenarPorMotivo ? diaRefMotivoEfetivo(datesSemana) : null;
+    const ordenar = f.ordenarPorMotivo
+      ? (lista)=>ordenarPorSupervisorNomeMotivo(lista, refIso)
+      : ordenarPorSupervisorENome;
+
+    const tecnicos = ordenar(pessoasFiltradas.filter(p=>p.tipo==='tecnico'));
+    const auxiliares = ordenar(pessoasFiltradas.filter(p=>p.tipo==='auxiliar'));
 
     function rowsFor(list){
       return list.map(p=>{
@@ -531,6 +586,28 @@
       </div>
     `;
 
+    const refIsoAtual = diaRefMotivoEfetivo(datesSemana);
+    const ordemHtml = `
+      <div class="ordem-row">
+        <div class="filter-field checkbox-field">
+          <input type="checkbox" id="filtroOrdenarMotivo" ${f.ordenarPorMotivo?'checked':''}>
+          <label for="filtroOrdenarMotivo">Ordenar também por motivo da ausência</label>
+        </div>
+        ${f.ordenarPorMotivo ? `
+        <div class="filter-field">
+          <label>Motivo do dia</label>
+          <select id="diaRefMotivo">
+            ${datesSemana.map(d=>{
+              const dIso = iso(d);
+              const rotulo = WEEKDAYS[datesSemana.indexOf(d)] + ' ' + br(d) + (dIso===hojeIso?' (hoje)':'');
+              return `<option value="${dIso}" ${dIso===refIsoAtual?'selected':''}>${rotulo}</option>`;
+            }).join('')}
+          </select>
+        </div>
+        <span class="ordem-hint">A ordem Supervisor → Nome → Motivo usa o lançamento desse dia. Você pode trocar o dia livremente.</span>` : ''}
+      </div>
+    `;
+
     const diasBar = `
       <div class="dias-bar">
         <span class="dias-bar-label">Dias exibidos</span>
@@ -559,6 +636,7 @@
           }</button>
         </div>
         ${filtersHtml}
+        ${ordemHtml}
         ${diasBar}
         <div id="capture-area">
           <div class="capture-header" id="captureHeader">
@@ -913,7 +991,7 @@
     }
 
     if(action==='limpar-filtros'){
-      state.filtros = { tipo:'todos', motivo:'todos', supervisor:'todos', busca:'', somenteSemana:false, dias:[0,1,2,3,4,5,6] };
+      state.filtros = { tipo:'todos', motivo:'todos', supervisor:'todos', busca:'', somenteSemana:false, dias:[0,1,2,3,4,5,6], ordenarPorMotivo:false, diaRefMotivo:'' };
       salvarFiltros();
       render();
       return;
@@ -1118,6 +1196,8 @@
     }
     if(e.target.id==='filtroTipo'){ state.filtros.tipo = e.target.value; salvarFiltros(); render(); return; }
     if(e.target.id==='filtroMotivo'){ state.filtros.motivo = e.target.value; salvarFiltros(); render(); return; }
+    if(e.target.id==='filtroOrdenarMotivo'){ state.filtros.ordenarPorMotivo = e.target.checked; salvarFiltros(); render(); return; }
+    if(e.target.id==='diaRefMotivo'){ state.filtros.diaRefMotivo = e.target.value; salvarFiltros(); render(); return; }
     if(e.target.id==='filtroSupervisor'){ state.filtros.supervisor = e.target.value; salvarFiltros(); render(); return; }
     if(e.target.id==='filtroSomenteSemana'){ state.filtros.somenteSemana = e.target.checked; salvarFiltros(); render(); return; }
     if(e.target.id==='relatorioMes'){ state.relatorioMes = e.target.value; render(); return; }

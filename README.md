@@ -44,6 +44,12 @@ imagem pronta para enviar no WhatsApp.
 - **Semana completa, com domingo**: a agenda mostra de segunda a domingo (7
   dias). A barra "Dias exibidos" e o filtro de dias da imagem também cobrem
   o domingo normalmente.
+- **Ordenar também pelo motivo da ausência**: opcional, na agenda. Quando
+  ligado, a ordem passa a ser Supervisor → Nome → Motivo da ausência, usando
+  o lançamento de um dia específico como referência (por padrão, hoje). Você
+  pode trocar livremente qual dia serve de referência, sem precisar deixar
+  em "hoje" — útil, por exemplo, para organizar a lista antes de gerar a
+  imagem de um dia específico.
 - **Cadastro de equipe e motivos**: abas para gerenciar técnicos, auxiliares
   e os motivos (com cor) usados nos lançamentos. A lista é organizada
   automaticamente por supervisor (ordem alfabética) e, dentro de cada
