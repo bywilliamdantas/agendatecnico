@@ -109,8 +109,11 @@ body{margin:0;font-family:var(--sans);background:var(--bg);color:var(--ink);}
 .add-row input[type=text]{flex:1;padding:9px 10px;border:1px solid var(--line);border-radius:6px;font-size:13.5px;font-family:var(--sans);}
 .list-item{display:flex;align-items:center;justify-content:space-between;padding:9px 10px;border:1px solid var(--line-soft);border-radius:6px;margin-bottom:6px;background:#FAFBFB;}
 .list-item .name{font-size:13.5px;font-weight:500;}
-.motivo-item{display:flex;align-items:center;gap:10px;}
+.motivo-item{display:flex;align-items:center;gap:10px;flex:1;min-width:0;}
 .swatch{width:16px;height:16px;border-radius:4px;flex-shrink:0;border:none;padding:0;}
+.motivo-nome-input{border:1px solid transparent;border-bottom:1px dashed var(--line);background:transparent;font-size:13.5px;font-family:var(--sans);color:var(--ink);padding:3px 4px;border-radius:4px;flex:1;min-width:0;}
+.motivo-nome-input:hover{border-bottom-color:var(--accent);}
+.motivo-nome-input:focus{outline:none;border:1px solid var(--accent);background:#fff;}
 .empty-list{padding:16px;text-align:center;color:var(--ink-soft);font-size:13px;border:1px dashed var(--line);border-radius:6px;}
 
 /* modal */

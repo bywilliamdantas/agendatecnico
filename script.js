@@ -278,6 +278,19 @@
     return set.sort((a,b)=>a.localeCompare(b,'pt-BR'));
   }
 
+  // ordena por supervisor (alfabético); quem não tem supervisor vai por
+  // último; dentro do mesmo supervisor, ordena por nome
+  function ordenarPorSupervisorENome(lista){
+    return lista.slice().sort((a,b)=>{
+      const sa = (a.supervisor||'').trim();
+      const sb = (b.supervisor||'').trim();
+      if(sa==='' && sb!=='') return 1;
+      if(sb==='' && sa!=='') return -1;
+      if(sa!==sb) return sa.localeCompare(sb,'pt-BR');
+      return a.nome.localeCompare(b.nome,'pt-BR');
+    });
+  }
+
   // abaixo do nome mostramos o supervisor; sem supervisor, mostra o cargo
   function subtituloPessoa(p){
     if(p.supervisor && p.supervisor.trim()) return 'Sup.: ' + p.supervisor.trim();
@@ -407,8 +420,8 @@
       pessoasFiltradas = pessoasFiltradas.filter(p=> eventosDaPessoaNaSemana(p).length>0);
     }
 
-    const tecnicos = pessoasFiltradas.filter(p=>p.tipo==='tecnico');
-    const auxiliares = pessoasFiltradas.filter(p=>p.tipo==='auxiliar');
+    const tecnicos = ordenarPorSupervisorENome(pessoasFiltradas.filter(p=>p.tipo==='tecnico'));
+    const auxiliares = ordenarPorSupervisorENome(pessoasFiltradas.filter(p=>p.tipo==='auxiliar'));
 
     function rowsFor(list){
       return list.map(p=>{
@@ -567,8 +580,8 @@
   }
 
   function renderEquipe(){
-    const tecnicos = state.data.pessoas.filter(p=>p.tipo==='tecnico');
-    const auxiliares = state.data.pessoas.filter(p=>p.tipo==='auxiliar');
+    const tecnicos = ordenarPorSupervisorENome(state.data.pessoas.filter(p=>p.tipo==='tecnico'));
+    const auxiliares = ordenarPorSupervisorENome(state.data.pessoas.filter(p=>p.tipo==='auxiliar'));
     function list(arr){
       if(arr.length===0) return '<div class="empty-list">Nenhum cadastrado ainda.</div>';
       return arr.map(p=>`
@@ -616,14 +629,14 @@
       <div class="list-item">
         <div class="motivo-item">
           <input type="color" class="swatch" value="${m.cor}" data-action="cor-motivo" data-id="${m.id}">
-          <span class="name">${escapeHtml(m.nome)}</span>
+          <input type="text" class="motivo-nome-input" data-action="editar-nome-motivo" data-id="${m.id}" value="${escapeAttr(m.nome)}" maxlength="40">
         </div>
         <button class="btn-danger-text" data-action="remover-motivo" data-id="${m.id}">Remover</button>
       </div>`).join('');
     return `
       <div class="panel sub-panel" style="max-width:520px;">
         <h3>Motivos</h3>
-        <p class="hint">Os motivos aparecem na agenda como etiquetas coloridas (ex.: manutenção de veículo, consulta médica, falta).</p>
+        <p class="hint">Os motivos aparecem na agenda como etiquetas coloridas (ex.: manutenção de veículo, consulta médica, falta). Clique no nome ou na cor para editar.</p>
         <div class="add-row">
           <input type="text" id="novoMotivo" placeholder="Novo motivo (ex.: Treinamento)">
           <input type="color" id="corNovoMotivo" class="swatch" value="${MOTIVO_PALETTE[motivos.length % MOTIVO_PALETTE.length]}" style="width:38px;">
@@ -1049,6 +1062,21 @@
 
   // eventos que não são 'click' nem 'input' direto em #app (selects, checkboxes, arquivo)
   document.addEventListener('change', function(e){
+    if(e.target.dataset && e.target.dataset.action==='editar-nome-motivo'){
+      const mo = motivoById(e.target.dataset.id);
+      if(mo){
+        const novoNome = e.target.value.trim();
+        if(!novoNome){
+          e.target.value = mo.nome;
+          showToast('O nome do motivo não pode ficar vazio.');
+          return;
+        }
+        mo.nome = novoNome;
+        e.target.value = novoNome;
+        saveData();
+      }
+      return;
+    }
     if(e.target.id==='modalMotivo'){
       syncModalFromDOM();
       if(e.target.value==='__novo__'){

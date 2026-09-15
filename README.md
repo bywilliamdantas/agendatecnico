@@ -42,7 +42,11 @@ imagem pronta para enviar no WhatsApp.
   esquerda enquanto você rola os dias na horizontal, então dá para tirar um
   print direto da tela sem precisar gerar a imagem.
 - **Cadastro de equipe e motivos**: abas para gerenciar técnicos, auxiliares
-  e os motivos (com cor) usados nos lançamentos.
+  e os motivos (com cor) usados nos lançamentos. A lista é organizada
+  automaticamente por supervisor (ordem alfabética) e, dentro de cada
+  supervisor, por nome do técnico/auxiliar — quem não tem supervisor
+  aparece por último. Os motivos podem ter nome e cor editados a qualquer
+  momento, sem precisar excluir e recriar.
 - **Lançar em vários dias de uma vez**: no modal de novo evento há uma
   seleção dos dias da semana — marque quantos quiser para repetir o mesmo
   motivo e período (útil para folga ou afastamento de vários dias).
