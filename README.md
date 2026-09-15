@@ -29,6 +29,18 @@ imagem pronta para enviar no WhatsApp.
   manhã; tarde só com tarde).
 - **Confirmações informativas**: ao remover uma pessoa ou um motivo, o aviso
   informa quantos eventos serão afetados.
+- **Supervisor por pessoa**: no cadastro dá para atribuir um supervisor a
+  cada técnico ou auxiliar. O nome do supervisor passa a aparecer abaixo do
+  nome da pessoa na agenda (no lugar de "Técnico"/"Auxiliar"), e há um filtro
+  por supervisor.
+- **Imagem do dia, de dias escolhidos ou da semana**: a barra "Dias exibidos"
+  liga e desliga cada dia da semana. A agenda mostra só os dias marcados e o
+  botão de gerar imagem segue essa seleção — dá para gerar a imagem de um
+  único dia, de alguns dias ou da semana inteira. Os atalhos "Semana toda" e
+  "Só hoje" fazem a seleção em um clique.
+- **Coluna de nomes fixa**: na agenda, a coluna das pessoas fica travada à
+  esquerda enquanto você rola os dias na horizontal, então dá para tirar um
+  print direto da tela sem precisar gerar a imagem.
 - **Cadastro de equipe e motivos**: abas para gerenciar técnicos, auxiliares
   e os motivos (com cor) usados nos lançamentos.
 - **Lançar em vários dias de uma vez**: no modal de novo evento há uma

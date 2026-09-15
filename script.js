@@ -10,7 +10,7 @@
     data: null,
     modal: null, // {mode:'new'|'edit', pessoaId, data, eventoId, showNewMotivo}
     loading: true,
-    filtros: { tipo:'todos', motivo:'todos', busca:'', somenteSemana:false }
+    filtros: { tipo:'todos', motivo:'todos', supervisor:'todos', busca:'', somenteSemana:false, dias:[0,1,2,3,4,5] }
   };
 
   function uid(prefix){ return prefix + Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
@@ -80,6 +80,12 @@
       state.filtros.motivo = 'todos';
       salvarFiltros();
     }
+    // idem para o supervisor salvo no filtro
+    if(state.filtros.supervisor!=='todos' && state.filtros.supervisor!=='__sem__'
+       && listaSupervisores().indexOf(state.filtros.supervisor)===-1){
+      state.filtros.supervisor = 'todos';
+      salvarFiltros();
+    }
 
     state.loading = false;
     saveData(true);
@@ -94,8 +100,13 @@
       if(f && typeof f === 'object'){
         if(typeof f.tipo === 'string') state.filtros.tipo = f.tipo;
         if(typeof f.motivo === 'string') state.filtros.motivo = f.motivo;
+        if(typeof f.supervisor === 'string') state.filtros.supervisor = f.supervisor;
         if(typeof f.busca === 'string') state.filtros.busca = f.busca;
         if(typeof f.somenteSemana === 'boolean') state.filtros.somenteSemana = f.somenteSemana;
+        if(Array.isArray(f.dias) && f.dias.length>0){
+          const dias = f.dias.filter(n=>Number.isInteger(n) && n>=0 && n<=5);
+          if(dias.length>0) state.filtros.dias = dias.sort((a,b)=>a-b);
+        }
       }
     }catch(e){ /* filtros corrompidos: segue com os padrões */ }
   }
@@ -244,9 +255,38 @@
   function contarEventosPorMotivo(motivoId){
     return state.data.eventos.filter(e=>e.motivoId===motivoId).length;
   }
+  // texto do cabeçalho da imagem, conforme os dias escolhidos
+  function legendaPeriodo(datasVisiveis, datasSemana){
+    if(datasVisiveis.length===0) return '';
+    if(datasVisiveis.length===1){
+      const d = datasVisiveis[0];
+      const diaSemana = d.toLocaleDateString('pt-BR',{weekday:'long'});
+      return diaSemana.charAt(0).toUpperCase()+diaSemana.slice(1)+', '+brLong(d);
+    }
+    if(datasVisiveis.length===datasSemana.length){
+      return 'Semana de '+brLong(datasSemana[0])+' a '+brLong(datasSemana[5]);
+    }
+    return 'Dias: '+datasVisiveis.map(br).join(', ')+' — '+brLong(datasSemana[0]).slice(6);
+  }
+
+  function listaSupervisores(){
+    const set = [];
+    state.data.pessoas.forEach(p=>{
+      const s = (p.supervisor||'').trim();
+      if(s && set.indexOf(s)===-1) set.push(s);
+    });
+    return set.sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  }
+
+  // abaixo do nome mostramos o supervisor; sem supervisor, mostra o cargo
+  function subtituloPessoa(p){
+    if(p.supervisor && p.supervisor.trim()) return 'Sup.: ' + p.supervisor.trim();
+    return p.tipo==='tecnico' ? 'Técnico' : 'Auxiliar';
+  }
+
   function filtrosAtivos(){
     const f = state.filtros;
-    return f.tipo!=='todos' || f.motivo!=='todos' || !!f.busca || f.somenteSemana;
+    return f.tipo!=='todos' || f.motivo!=='todos' || f.supervisor!=='todos' || !!f.busca || f.somenteSemana || (f.dias && f.dias.length!==6);
   }
 
   function plural(n, singular, pluralForma){
@@ -329,20 +369,24 @@
     }
   }
 
-  function renderAgenda(dates){
+  function renderAgenda(datesSemana){
     const pessoasTodas = state.data.pessoas;
     if(pessoasTodas.length===0){
       return `<div class="panel"><div class="empty-list">Nenhum técnico ou auxiliar cadastrado ainda. Vá até a aba <b>Técnicos &amp; auxiliares</b> para cadastrar sua equipe.</div></div>`;
     }
 
     const f = state.filtros;
-    const diso0 = iso(dates[0]), disoN = iso(dates[5]);
+    // dias escolhidos para aparecer na tela e na imagem
+    const indicesDias = (f.dias && f.dias.length) ? f.dias.slice().sort((a,b)=>a-b) : [0,1,2,3,4,5];
+    const dates = indicesDias.map(i=>datesSemana[i]);
     const hojeIso = iso(new Date());
+
+    const isosVisiveis = dates.map(iso);
 
     function eventosDaPessoaNaSemana(p){
       return state.data.eventos.filter(e=>{
         if(e.pessoaId!==p.id) return false;
-        if(e.data<diso0 || e.data>disoN) return false;
+        if(isosVisiveis.indexOf(e.data)===-1) return false;
         if(f.motivo!=='todos' && e.motivoId!==f.motivo) return false;
         return true;
       });
@@ -350,6 +394,11 @@
 
     let pessoasFiltradas = pessoasTodas.filter(p=>{
       if(f.tipo!=='todos' && p.tipo!==f.tipo) return false;
+      if(f.supervisor!=='todos'){
+        const sup = (p.supervisor||'').trim();
+        if(f.supervisor==='__sem__'){ if(sup) return false; }
+        else if(sup !== f.supervisor) return false;
+      }
       if(f.busca && !p.nome.toLowerCase().includes(f.busca.toLowerCase())) return false;
       return true;
     });
@@ -379,7 +428,7 @@
           const hojeCls = (diso===hojeIso) ? ' is-today' : '';
           return `<div class="cell day-cell${hojeCls}" data-action="add-evento-cell" data-pessoa="${p.id}" data-data="${diso}">${chips}</div>`;
         }).join('');
-        return `<div class="cell person-cell"><span class="person-name">${escapeHtml(p.nome)}</span><span class="person-tag">${p.tipo==='tecnico'?'Técnico':'Auxiliar'}</span></div>${cells}`;
+        return `<div class="cell person-cell"><span class="person-name">${escapeHtml(p.nome)}</span><span class="person-tag">${escapeHtml(subtituloPessoa(p))}</span></div>${cells}`;
       }).join('');
     }
 
@@ -401,7 +450,7 @@
             </div>`;
           }).join('');
           return `<div class="mc-dia${diso===hoje?' is-today':''}">
-            <div class="mc-dia-label">${WEEKDAYS[i]} ${br(d)}${diso===hoje?'<span class="today-badge">HOJE</span>':''}</div>
+            <div class="mc-dia-label">${WEEKDAYS[indicesDias[i]]} ${br(d)}${diso===hoje?'<span class="today-badge">HOJE</span>':''}</div>
             <div class="mc-dia-chips">${chips}</div>
           </div>`;
         }).join('');
@@ -411,7 +460,7 @@
           <div class="mc-head">
             <div>
               <div class="mc-nome">${escapeHtml(p.nome)}</div>
-              <div class="mc-tag">${p.tipo==='tecnico'?'Técnico':'Auxiliar'}</div>
+              <div class="mc-tag">${escapeHtml(subtituloPessoa(p))}</div>
             </div>
             <button class="btn btn-ghost btn-small" data-action="add-evento-cell" data-pessoa="${p.id}" data-data="${iso(datas[0])}">+ Lançar</button>
           </div>
@@ -426,7 +475,7 @@
 
     const headCells = dates.map((d,i)=>{
       const ehHoje = iso(d)===hojeIso;
-      return `<div class="cell head-cell${ehHoje?' is-today':''}"><b>${WEEKDAYS[i]}${ehHoje?'<span class="today-badge">HOJE</span>':''}</b>${br(d)}</div>`;
+      return `<div class="cell head-cell${ehHoje?' is-today':''}"><b>${WEEKDAYS[indicesDias[i]]}${ehHoje?'<span class="today-badge">HOJE</span>':''}</b>${br(d)}</div>`;
     }).join('');
 
     const motivosOptsFiltro = state.data.motivos.map(m=>`<option value="${m.id}" ${f.motivo===m.id?'selected':''}>${escapeHtml(m.nome)}</option>`).join('');
@@ -449,6 +498,14 @@
           </select>
         </div>
         <div class="filter-field">
+          <label>Supervisor</label>
+          <select id="filtroSupervisor">
+            <option value="todos" ${f.supervisor==='todos'?'selected':''}>Todos</option>
+            ${listaSupervisores().map(s=>`<option value="${escapeAttr(s)}" ${f.supervisor===s?'selected':''}>${escapeHtml(s)}</option>`).join('')}
+            <option value="__sem__" ${f.supervisor==='__sem__'?'selected':''}>Sem supervisor</option>
+          </select>
+        </div>
+        <div class="filter-field">
           <label>Buscar por nome</label>
           <input type="text" id="filtroBusca" placeholder="Nome do técnico ou auxiliar" value="${escapeAttr(f.busca)}">
         </div>
@@ -460,25 +517,45 @@
       </div>
     `;
 
+    const diasBar = `
+      <div class="dias-bar">
+        <span class="dias-bar-label">Dias exibidos</span>
+        <div class="dias-bar-toggles">
+          ${datesSemana.map((d,i)=>`
+            <button class="dia-toggle${indicesDias.indexOf(i)!==-1?' on':''}${iso(d)===hojeIso?' hoje':''}"
+                    data-action="toggle-dia" data-dia="${i}" title="${WEEKDAYS[i]} ${br(d)}">
+              <span class="dt-wd">${WEEKDAYS[i]}</span><span class="dt-dt">${br(d)}</span>
+            </button>`).join('')}
+        </div>
+        <div class="dias-bar-acoes">
+          <button class="btn btn-ghost btn-small" data-action="dias-todos">Semana toda</button>
+          <button class="btn btn-ghost btn-small" data-action="dias-hoje">Só hoje</button>
+        </div>
+      </div>`;
+
     const semResultado = (tecnicos.length + auxiliares.length) === 0;
 
     return `
       <div class="panel">
         <div class="agenda-toolbar">
           <div style="font-size:13px;color:var(--ink-soft);">${isMobile() ? 'Toque em "+ Lançar" no cartão da pessoa, ou em um lançamento para editá-lo.' : 'Clique em uma célula do dia para lançar um evento.'}</div>
-          <button class="btn btn-accent" data-action="gerar-imagem">Gerar imagem para WhatsApp</button>
+          <button class="btn btn-accent" data-action="gerar-imagem">${
+            indicesDias.length===1 ? 'Gerar imagem do dia' :
+            (indicesDias.length===6 ? 'Gerar imagem da semana' : `Gerar imagem (${indicesDias.length} dias)`)
+          }</button>
         </div>
         ${filtersHtml}
+        ${diasBar}
         <div id="capture-area">
           <div class="capture-header" id="captureHeader">
             <h2>${escapeHtml(state.data.nomeEmpresa)}</h2>
-            <span>Semana de ${brLong(dates[0])} a ${brLong(dates[5])}</span>
+            <span>${legendaPeriodo(dates, datesSemana)}</span>
           </div>
           ${semResultado ? '<div class="empty-list">Nenhum resultado para os filtros aplicados nesta semana.</div>' : (
             isMobile() ? cardsFor(tecnicos, auxiliares, dates, hojeIso) : `
           <div class="grid-wrap">
-            <div class="agrid">
-              <div class="cell head-cell"></div>
+            <div class="agrid" style="grid-template-columns:170px repeat(${dates.length},minmax(130px,1fr));min-width:${170 + dates.length*130}px;">
+              <div class="cell head-cell head-canto"></div>
               ${headCells}
               ${tecnicos.length ? `<div class="group-row">Técnicos</div>` + rowsFor(tecnicos) : ''}
               ${auxiliares.length ? `<div class="group-row">Auxiliares</div>` + rowsFor(auxiliares) : ''}
@@ -495,8 +572,15 @@
     function list(arr){
       if(arr.length===0) return '<div class="empty-list">Nenhum cadastrado ainda.</div>';
       return arr.map(p=>`
-        <div class="list-item">
-          <span class="name">${escapeHtml(p.nome)}</span>
+        <div class="list-item pessoa-item">
+          <div class="pessoa-dados">
+            <span class="name">${escapeHtml(p.nome)}</span>
+            <div class="sup-row">
+              <label for="sup-${p.id}">Supervisor</label>
+              <input type="text" id="sup-${p.id}" class="sup-input" data-action="editar-supervisor" data-id="${p.id}"
+                     value="${escapeAttr(p.supervisor||'')}" placeholder="sem supervisor" maxlength="40">
+            </div>
+          </div>
           <button class="btn-danger-text" data-action="remover-pessoa" data-id="${p.id}">Remover</button>
         </div>`).join('');
     }
@@ -504,9 +588,10 @@
       <div class="col-2">
         <div class="panel sub-panel">
           <h3>Técnicos</h3>
-          <p class="hint">Quem faz o trabalho técnico em campo ou oficina.</p>
-          <div class="add-row">
+          <p class="hint">Quem faz o trabalho técnico em campo ou oficina. O supervisor aparece abaixo do nome na agenda.</p>
+          <div class="add-row add-row-2">
             <input type="text" id="novoTecnico" placeholder="Nome do técnico">
+            <input type="text" id="novoTecnicoSup" placeholder="Supervisor (opcional)">
             <button class="btn btn-accent" data-action="add-pessoa" data-tipo="tecnico">Adicionar</button>
           </div>
           ${list(tecnicos)}
@@ -514,8 +599,9 @@
         <div class="panel sub-panel">
           <h3>Auxiliares</h3>
           <p class="hint">Quem apoia a equipe técnica.</p>
-          <div class="add-row">
+          <div class="add-row add-row-2">
             <input type="text" id="novoAuxiliar" placeholder="Nome do auxiliar">
+            <input type="text" id="novoAuxiliarSup" placeholder="Supervisor (opcional)">
             <button class="btn btn-accent" data-action="add-pessoa" data-tipo="auxiliar">Adicionar</button>
           </div>
           ${list(auxiliares)}
@@ -752,6 +838,11 @@
 
   function onAppInput(e){
     const t = e.target;
+    if(t.dataset.action==='editar-supervisor'){
+      const p = pessoaById(t.dataset.id);
+      if(p){ p.supervisor = t.value.trim(); saveData(); }
+      return;
+    }
     if(t.dataset.action==='cor-motivo'){
       const mo = state.data.motivos.find(m=>m.id===t.dataset.id);
       if(mo){ mo.cor = t.value; saveData(); render(); }
@@ -778,8 +869,37 @@
     if(action==='today'){ state.weekOffset=0; render(); return; }
     if(action==='tab'){ state.activeTab = el.dataset.tab; render(); return; }
 
+    if(action==='toggle-dia'){
+      const i = Number(el.dataset.dia);
+      const atual = state.filtros.dias.slice();
+      const pos = atual.indexOf(i);
+      if(pos!==-1){
+        if(atual.length===1){ showToast('Deixe pelo menos um dia visível.'); return; }
+        atual.splice(pos,1);
+      } else {
+        atual.push(i);
+      }
+      state.filtros.dias = atual.sort((a,b)=>a-b);
+      salvarFiltros(); render();
+      return;
+    }
+    if(action==='dias-todos'){
+      state.filtros.dias = [0,1,2,3,4,5];
+      salvarFiltros(); render();
+      return;
+    }
+    if(action==='dias-hoje'){
+      const semana = weekDates(state.weekOffset);
+      const hojeIso = iso(new Date());
+      const idx = semana.findIndex(d=>iso(d)===hojeIso);
+      if(idx===-1){ showToast('Hoje não está na semana que você está vendo.'); return; }
+      state.filtros.dias = [idx];
+      salvarFiltros(); render();
+      return;
+    }
+
     if(action==='limpar-filtros'){
-      state.filtros = { tipo:'todos', motivo:'todos', busca:'', somenteSemana:false };
+      state.filtros = { tipo:'todos', motivo:'todos', supervisor:'todos', busca:'', somenteSemana:false, dias:[0,1,2,3,4,5] };
       salvarFiltros();
       render();
       return;
@@ -791,11 +911,14 @@
     if(action==='add-pessoa'){
       const tipo = el.dataset.tipo;
       const inputId = tipo==='tecnico' ? 'novoTecnico' : 'novoAuxiliar';
+      const supId = tipo==='tecnico' ? 'novoTecnicoSup' : 'novoAuxiliarSup';
       const input = document.getElementById(inputId);
+      const supInput = document.getElementById(supId);
       const nome = input.value.trim();
       if(!nome){ showToast('Digite um nome antes de adicionar.'); return; }
-      state.data.pessoas.push({id:uid('p'), nome, tipo});
+      state.data.pessoas.push({id:uid('p'), nome, tipo, supervisor: supInput ? supInput.value.trim() : ''});
       input.value='';
+      if(supInput) supInput.value='';
       saveData(); render();
       return;
     }
@@ -966,6 +1089,7 @@
     }
     if(e.target.id==='filtroTipo'){ state.filtros.tipo = e.target.value; salvarFiltros(); render(); return; }
     if(e.target.id==='filtroMotivo'){ state.filtros.motivo = e.target.value; salvarFiltros(); render(); return; }
+    if(e.target.id==='filtroSupervisor'){ state.filtros.supervisor = e.target.value; salvarFiltros(); render(); return; }
     if(e.target.id==='filtroSomenteSemana'){ state.filtros.somenteSemana = e.target.checked; salvarFiltros(); render(); return; }
     if(e.target.id==='relatorioMes'){ state.relatorioMes = e.target.value; render(); return; }
     if(e.target.id==='irParaData'){ irParaData(e.target.value); return; }
@@ -1107,9 +1231,13 @@
       canvas.toBlob(blob=>{
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        const dates = weekDates(state.weekOffset);
+        const semana = weekDates(state.weekOffset);
+        const dias = (state.filtros.dias && state.filtros.dias.length) ? state.filtros.dias : [0,1,2,3,4,5];
+        const nome = dias.length===1
+          ? `agenda-dia-${iso(semana[dias[0]])}.png`
+          : (dias.length===6 ? `agenda-semana-${iso(semana[0])}.png` : `agenda-dias-${iso(semana[dias[0]])}.png`);
         a.href = url;
-        a.download = `agenda-semana-${iso(dates[0])}.png`;
+        a.download = nome;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
