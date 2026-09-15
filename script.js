@@ -1,5 +1,5 @@
 (function(){
-  const WEEKDAYS = ["Seg","Ter","Qua","Qui","Sex","Sáb"];
+  const WEEKDAYS = ["Seg","Ter","Qua","Qui","Sex","Sáb","Dom"];
   const MOTIVO_PALETTE = ["#2C5F8A","#C98A2E","#6B5CA5","#C1443D","#2F7A62","#8A5A44","#4A6FA5","#A5477A"];
   const STORAGE_KEY = "painelEquipeDados";
   const FILTROS_KEY = "painelEquipeFiltros";
@@ -10,7 +10,7 @@
     data: null,
     modal: null, // {mode:'new'|'edit', pessoaId, data, eventoId, showNewMotivo}
     loading: true,
-    filtros: { tipo:'todos', motivo:'todos', supervisor:'todos', busca:'', somenteSemana:false, dias:[0,1,2,3,4,5] }
+    filtros: { tipo:'todos', motivo:'todos', supervisor:'todos', busca:'', somenteSemana:false, dias:[0,1,2,3,4,5,6] }
   };
 
   function uid(prefix){ return prefix + Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
@@ -104,7 +104,7 @@
         if(typeof f.busca === 'string') state.filtros.busca = f.busca;
         if(typeof f.somenteSemana === 'boolean') state.filtros.somenteSemana = f.somenteSemana;
         if(Array.isArray(f.dias) && f.dias.length>0){
-          const dias = f.dias.filter(n=>Number.isInteger(n) && n>=0 && n<=5);
+          const dias = f.dias.filter(n=>Number.isInteger(n) && n>=0 && n<=6);
           if(dias.length>0) state.filtros.dias = dias.sort((a,b)=>a-b);
         }
       }
@@ -210,13 +210,14 @@
     const base = mondayOf(new Date());
     base.setDate(base.getDate() + offset*7);
     const arr=[];
-    for(let i=0;i<6;i++){
+    for(let i=0;i<7;i++){
       const d = new Date(base);
       d.setDate(d.getDate()+i);
       arr.push(d);
     }
     return arr;
   }
+
   // usa a data LOCAL (toISOString converteria para UTC e poderia trocar o dia)
   function iso(d){
     return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
@@ -264,7 +265,7 @@
       return diaSemana.charAt(0).toUpperCase()+diaSemana.slice(1)+', '+brLong(d);
     }
     if(datasVisiveis.length===datasSemana.length){
-      return 'Semana de '+brLong(datasSemana[0])+' a '+brLong(datasSemana[5]);
+      return 'Semana de '+brLong(datasSemana[0])+' a '+brLong(datasSemana[6]);
     }
     return 'Dias: '+datasVisiveis.map(br).join(', ')+' — '+brLong(datasSemana[0]).slice(6);
   }
@@ -299,7 +300,7 @@
 
   function filtrosAtivos(){
     const f = state.filtros;
-    return f.tipo!=='todos' || f.motivo!=='todos' || f.supervisor!=='todos' || !!f.busca || f.somenteSemana || (f.dias && f.dias.length!==6);
+    return f.tipo!=='todos' || f.motivo!=='todos' || f.supervisor!=='todos' || !!f.busca || f.somenteSemana || (f.dias && f.dias.length!==7);
   }
 
   function plural(n, singular, pluralForma){
@@ -329,7 +330,7 @@
     atualizarTitulo();
     ultimoModoMobile = isMobile();
     const dates = weekDates(state.weekOffset);
-    const rangeLabel = br(dates[0]) + ' – ' + br(dates[5]);
+    const rangeLabel = br(dates[0]) + ' – ' + br(dates[6]);
 
     app.innerHTML = `
       <div class="topbar">
@@ -390,7 +391,7 @@
 
     const f = state.filtros;
     // dias escolhidos para aparecer na tela e na imagem
-    const indicesDias = (f.dias && f.dias.length) ? f.dias.slice().sort((a,b)=>a-b) : [0,1,2,3,4,5];
+    const indicesDias = (f.dias && f.dias.length) ? f.dias.slice().sort((a,b)=>a-b) : [0,1,2,3,4,5,6];
     const dates = indicesDias.map(i=>datesSemana[i]);
     const hojeIso = iso(new Date());
 
@@ -554,7 +555,7 @@
           <div style="font-size:13px;color:var(--ink-soft);">${isMobile() ? 'Toque em "+ Lançar" no cartão da pessoa, ou em um lançamento para editá-lo.' : 'Clique em uma célula do dia para lançar um evento.'}</div>
           <button class="btn btn-accent" data-action="gerar-imagem">${
             indicesDias.length===1 ? 'Gerar imagem do dia' :
-            (indicesDias.length===6 ? 'Gerar imagem da semana' : `Gerar imagem (${indicesDias.length} dias)`)
+            (indicesDias.length===7 ? 'Gerar imagem da semana' : `Gerar imagem (${indicesDias.length} dias)`)
           }</button>
         </div>
         ${filtersHtml}
@@ -802,7 +803,7 @@
     const base = mondayOf(new Date(dataBase+'T00:00:00'));
     const marcados = state.modal && state.modal.diasExtras ? state.modal.diasExtras : [];
     let out = '';
-    for(let i=0;i<6;i++){
+    for(let i=0;i<7;i++){
       const d = new Date(base);
       d.setDate(d.getDate()+i);
       const diso = iso(d);
@@ -897,7 +898,7 @@
       return;
     }
     if(action==='dias-todos'){
-      state.filtros.dias = [0,1,2,3,4,5];
+      state.filtros.dias = [0,1,2,3,4,5,6];
       salvarFiltros(); render();
       return;
     }
@@ -912,7 +913,7 @@
     }
 
     if(action==='limpar-filtros'){
-      state.filtros = { tipo:'todos', motivo:'todos', supervisor:'todos', busca:'', somenteSemana:false, dias:[0,1,2,3,4,5] };
+      state.filtros = { tipo:'todos', motivo:'todos', supervisor:'todos', busca:'', somenteSemana:false, dias:[0,1,2,3,4,5,6] };
       salvarFiltros();
       render();
       return;
@@ -995,7 +996,7 @@
       if(!primeiraPessoa){ showToast('Cadastre ao menos um técnico ou auxiliar primeiro.'); state.activeTab='equipe'; render(); return; }
       const dates = weekDates(state.weekOffset);
       const todayIso = iso(new Date());
-      const dataPadrao = (todayIso>=iso(dates[0]) && todayIso<=iso(dates[5])) ? todayIso : iso(dates[0]);
+      const dataPadrao = (todayIso>=iso(dates[0]) && todayIso<=iso(dates[6])) ? todayIso : iso(dates[0]);
       state.modal = {
         mode:'new',
         pessoaId: primeiraPessoa.id,
@@ -1260,10 +1261,10 @@
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         const semana = weekDates(state.weekOffset);
-        const dias = (state.filtros.dias && state.filtros.dias.length) ? state.filtros.dias : [0,1,2,3,4,5];
+        const dias = (state.filtros.dias && state.filtros.dias.length) ? state.filtros.dias : [0,1,2,3,4,5,6];
         const nome = dias.length===1
           ? `agenda-dia-${iso(semana[dias[0]])}.png`
-          : (dias.length===6 ? `agenda-semana-${iso(semana[0])}.png` : `agenda-dias-${iso(semana[dias[0]])}.png`);
+          : (dias.length===7 ? `agenda-semana-${iso(semana[0])}.png` : `agenda-dias-${iso(semana[dias[0]])}.png`);
         a.href = url;
         a.download = nome;
         document.body.appendChild(a);

@@ -75,7 +75,7 @@ body{margin:0;font-family:var(--sans);background:var(--bg);color:var(--ink);}
 .grid-wrap::-webkit-scrollbar-track{background:#F0F3F2;border-radius:5px;}
 .grid-wrap::-webkit-scrollbar-thumb{background:#C3CFCC;border-radius:5px;}
 .grid-wrap::-webkit-scrollbar-thumb:hover{background:#A9B8B4;}
-.agrid{display:grid;grid-template-columns:170px repeat(6,minmax(130px,1fr));border:1px solid var(--line);border-radius:6px;min-width:950px;}
+.agrid{display:grid;grid-template-columns:170px repeat(7,minmax(120px,1fr));border:1px solid var(--line);border-radius:6px;min-width:1010px;}
 .cell{border-right:1px solid var(--line-soft);border-bottom:1px solid var(--line-soft);padding:8px;}
 .head-cell{background:#F5F7F6;font-family:var(--mono);font-size:12px;color:var(--ink-soft);padding:10px 8px;text-align:left;}
 .head-cell b{display:block;color:var(--ink);font-size:13px;font-family:var(--sans);}
@@ -168,7 +168,8 @@ body{margin:0;font-family:var(--sans);background:var(--bg);color:var(--ink);}
 .toast-action:hover{color:#B9DDF3;}
 
 /* seleção de vários dias no modal */
-.days-multi{display:grid;grid-template-columns:repeat(6,1fr);gap:5px;}
+.days-multi{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;}
+.day-pick{padding:5px 1px;}
 .day-pick{border:1px solid var(--line);border-radius:6px;padding:6px 2px;text-align:center;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:1px;font-size:11px;color:var(--ink-soft);}
 .day-pick input{display:none;}
 .day-pick .dp-wd{font-weight:700;font-size:11.5px;}

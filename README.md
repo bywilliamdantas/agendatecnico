@@ -41,6 +41,9 @@ imagem pronta para enviar no WhatsApp.
 - **Coluna de nomes fixa**: na agenda, a coluna das pessoas fica travada à
   esquerda enquanto você rola os dias na horizontal, então dá para tirar um
   print direto da tela sem precisar gerar a imagem.
+- **Semana completa, com domingo**: a agenda mostra de segunda a domingo (7
+  dias). A barra "Dias exibidos" e o filtro de dias da imagem também cobrem
+  o domingo normalmente.
 - **Cadastro de equipe e motivos**: abas para gerenciar técnicos, auxiliares
   e os motivos (com cor) usados nos lançamentos. A lista é organizada
   automaticamente por supervisor (ordem alfabética) e, dentro de cada
